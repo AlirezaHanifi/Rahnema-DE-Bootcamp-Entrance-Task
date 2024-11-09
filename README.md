@@ -8,31 +8,31 @@ This project is containerized using Docker Compose, with configurations defined 
 The project structure is organized as follows:
 
 ```bash
-├── Chalenge-Data Engineering.pdf
-├── README.md
-├── app
-│   ├── Dockerfile
-│   ├── redis_postgres_syncer.py
-│   └── requirements.txt
-├── compose.yaml
-├── pg
-│   ├── data
-│   ├── init
-│   │   └── importing_data.sql
-│   └── init-data
-│       ├── customers.csv
-│       └── orders.csv
+├── Chalenge-Data Engineering.pdf      # Task instructions in PDF format.
+├── README.md                          # Project overview and setup instructions.                  
+├── app                                # Source code and dependencies for syncing PostgreSQL data into Redis.
+│   ├── Dockerfile                    
+│   ├── redis_postgres_syncer.py       
+│   └── requirements.txt               
+├── compose.yaml                       # Docker Compose configuration for PostgreSQL, Redis, and syncer.
+├── data
+│   ├── pg                            
+│   │   ├── data                       # PostgreSQL data volume for Docker.
+│   │   ├── init                       
+│   │   │   └── importing_data.sql     # SQL script to set up PostgreSQL tables and load data.
+│   │   └── init-data                  
+│   │       ├── customers.csv          # CSV file with customer data for PostgreSQL.
+│   │       └── orders.csv             # CSV file with order data for PostgreSQL.
+│   └── redis                          # Redis data volume for Docker.
 └── queries
-    └── solution.sql
+    └── solution.sql                   # SQL queries for solving the tasks.
 ```
 
-- `redis_postgres_syncer.py` contains the logic for data transfer from PostgreSQL to Redis.
-- SQL and CSVs are used to initialize data in PostgreSQL.
 - To configure environment variables, rename `.env.example` to `.env`.
 
 ### Section 2: Data Import and Table Setup
 
-The [`importing_data.sql`](pg/init/importing_data.sql) script in the `pg/init` folder creates the
+The [`importing_data.sql`](data/pg/init/importing_data.sql) script in the `data/pg/init/` folder creates the
 necessary tables and imports data from the `customers.csv` and `orders.csv` files into the
 PostgreSQL database.
 
@@ -43,14 +43,11 @@ in the data efficiently:
 
 1. File Splitting and Parallelization
    - Split large files into smaller parts for parallel processing.
-   - Use Airflow to orchestrate parallel COPY commands for each part, with a DAG managing task dependencies.
+   - Use Airflow to orchestrate parallel COPY commands for each part.
 2. Staging Tables
    - Load data quickly into staging tables without indexes or constraints.
 3. Index Management
    - Temporarily disable indexes and constraints before loading data:
-4. Batch Processing with Airflow
-   - Divide data into batches and load each batch iteratively.
-   - Use Airflow to manage batches in sequence and retry failed loads.
 
 ### Section 4 to 7: Query Solutions
 
@@ -58,7 +55,7 @@ The SQL solutions for sections 4 to 7 are stored in [`queries/solution.sql`](que
 
 ## Question 2: Data Transfer Between PostgreSQL and Redis
 
-To improve the process of transferring data from PostgreSQL to Redis, consider these optimizations:
+To improve the process of transferring data from PostgreSQL to Redis, we can consider these optimizations:
 
 1. Automated Scheduling with Airflow
    - Automate the data transfer process using an Airflow DAG to periodically fetch data from PostgreSQL and load it into Redis. This approach enables scheduling, retries, and monitoring.
