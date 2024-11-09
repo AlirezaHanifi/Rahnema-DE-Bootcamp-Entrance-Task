@@ -1,34 +1,43 @@
+import logging
 import os
 import time
-from decimal import Decimal
 
 import psycopg2
 import redis
 import schedule
+from psycopg2 import OperationalError, sql
 
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
-POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", 5432))
-POSTGRES_DB = os.getenv("POSTGRES_DB")
-POSTGRES_USER = os.getenv("POSTGRES_USER")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-REDIS_DB = 0
+POSTGRES_SETTINGS = {
+    "host": os.getenv("POSTGRES_HOST", "localhost"),
+    "port": int(os.getenv("POSTGRES_PORT", 5432)),
+    "dbname": os.getenv("POSTGRES_DB"),
+    "user": os.getenv("POSTGRES_USER"),
+    "password": os.getenv("POSTGRES_PASSWORD"),
+}
+
+REDIS_SETTINGS = {
+    "host": os.getenv("REDIS_HOST", "localhost"),
+    "port": int(os.getenv("REDIS_PORT", 6379)),
+    "db": 0,
+}
 
 
 def get_postgres_connection():
-    return psycopg2.connect(
-        host=POSTGRES_HOST,
-        port=POSTGRES_PORT,
-        dbname=POSTGRES_DB,
-        user=POSTGRES_USER,
-        password=POSTGRES_PASSWORD,
-    )
+    """Establish and return a connection to the PostgreSQL database."""
+    try:
+        return psycopg2.connect(**POSTGRES_SETTINGS)
+    except OperationalError as e:
+        logging.error(f"PostgreSQL connection error: {e}")
+        return None
 
 
 def fetch_data(cursor):
-    query = """
+    """Execute query to fetch data from PostgreSQL and return the results."""
+    query = sql.SQL("""
         select c.country,
             count(distinct c.customer_id) users_counts,
             sum(o.amount)                 order_amount
@@ -36,48 +45,48 @@ def fetch_data(cursor):
                 join public.customers c
                     on c.customer_id = o.customer_id
         group by c.country;
-    """
+    """)
     cursor.execute(query)
     return cursor.fetchall()
 
 
 def store_data_in_redis(results):
-    r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
-    for country, users_counts, order_amount in results:
-        key = f"country:{country}"
-        r.hset(
-            name=key,
-            mapping={
-                "users_counts": users_counts,
-                "order_amount": float(order_amount)
-                if isinstance(order_amount, Decimal)
-                else order_amount,
-            },
-        )
-    print("Data stored in Redis successfully.")
+    """Store data in Redis using a pipeline to optimize performance."""
+    r = redis.Redis(**REDIS_SETTINGS)
+    with r.pipeline() as pipe:
+        for country, users_counts, order_amount in results:
+            key = f"country:{country}"
+            pipe.hset(
+                name=key,
+                mapping={
+                    "users_counts": int(users_counts),
+                    "order_amount": float(order_amount),
+                },
+            )
+        pipe.execute()
+    logging.info("Data stored in Redis successfully.")
 
 
 def fetch_and_store_data():
-    cursor = None
-    conn = None
+    """Fetch data from PostgreSQL and store it in Redis."""
+    conn = get_postgres_connection()
+    if not conn:
+        return
+
     try:
-        conn = get_postgres_connection()
-        cursor = conn.cursor()
-        results = fetch_data(cursor)
-        store_data_in_redis(results)
+        with conn.cursor() as cursor:
+            results = fetch_data(cursor)
+            store_data_in_redis(results)
     except Exception as e:
-        print(f"An error occurred: {e}")
+        logging.error(f"An error occurred during data fetch/store: {e}")
     finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+        conn.close()
 
 
 schedule.every(1).minutes.do(fetch_and_store_data)
+logging.info("Scheduler started. Fetching data every 1 minute...")
 
-print("Scheduler started. Fetching data every 1 minute...")
-
-while True:
-    schedule.run_pending()
-    time.sleep(1)
+if __name__ == "__main__":
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
